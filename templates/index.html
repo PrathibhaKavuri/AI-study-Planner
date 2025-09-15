@@ -1,1 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Study Planner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:#f8fafc; color:#0f172a; }
+    header { background:white; box-shadow: 0 1px 0 rgba(2,6,23,0.06); }
+    .message-bubble { padding:1rem 1.25rem; border-radius:1rem; max-width:70%; position:relative; word-wrap:break-word; box-shadow:0 2px 10px rgba(2,6,23,0.04); }
+    .user-message { margin-left:auto; border:2px solid #2563eb; border-radius:10px; white-space:pre-wrap; text-align:right; padding:8px 12px; color:#0f172a; background:transparent; }
+    .agent-message { background:white; border:1px solid #e6edf3; color:#0b1720; }
+    .timestamp { font-size:0.65rem; color:#374151; position:absolute; bottom:-18px; right:10px; }
+    .motivational { font-style:italic; color:#4f46e5; font-weight:600; text-align:center; }
+    .priority-high { background:#fff1f2; border-left:4px solid #ef4444; }
+    .priority-medium { background:#fffbeb; border-left:4px solid #f59e0b; }
+    .priority-low { background:#ecfdf5; border-left:4px solid #10b981; }
+    .task-card { transition: transform .18s ease, box-shadow .18s ease; }
+    .task-card:hover { transform:translateY(-4px); box-shadow:0 6px 18px rgba(2,6,23,0.06); }
+    .scrollbar { scrollbar-width:thin; scrollbar-color:#cbd5e1 transparent; }
+    .scrollbar::-webkit-scrollbar { height:8px; width:8px; }
+    .scrollbar::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:6px; }
+    .progress-bar-bg { background:#e6eef7; height:0.6rem; border-radius:999px; overflow:hidden; }
+    .progress-bar-fill { height:100%; width:0%; transition:width .45s cubic-bezier(.2,.8,.2,1); background:linear-gradient(90deg,#3b82f6,#8b5cf6); }
+    .pomodoro-timer { font-weight:700; font-size:1.25rem; margin-top:.5rem; color:#4f46e5; text-align:center; }
+    .rounded-10 { border-radius:10px; }
+    .btn { transition:background .15s ease, transform .08s ease; }
+    .btn:active { transform:translateY(1px); }
+  </style>
+</head>
+<body class="flex flex-col h-screen">
 
+  <header class="px-6 py-4 flex items-center justify-between">
+    <h1 class="text-2xl font-semibold">AI Study Planner</h1>
+    <span id="motivational-quote" class="motivational">“You can do it!”</span>
+  </header>
+
+  <div class="flex flex-1 overflow-hidden">
+    <aside class="w-96 bg-white border-r border-gray-200 flex flex-col overflow-y-auto scrollbar">
+      <div class="p-5 border-b">
+        <h2 class="text-lg font-semibold mb-3">Tasks</h2>
+        <div class="flex gap-2">
+          <button onclick="filterTasks('all')" class="px-3 py-1 rounded-lg bg-blue-100 text-blue-700 text-sm btn">All</button>
+          <button onclick="filterTasks('pending')" class="px-3 py-1 rounded-lg bg-yellow-100 text-yellow-800 text-sm btn">Pending</button>
+          <button onclick="filterTasks('completed')" class="px-3 py-1 rounded-lg bg-green-100 text-green-700 text-sm btn">Completed</button>
+        </div>
+      </div>
+
+      <div id="task-list" class="p-5 space-y-3">
+        {% for t in tasks %}
+        <div class="task-card p-4 rounded-lg flex justify-between items-start {% if t[4]==1 %}bg-gray-100 completed{% else %}{% if t[5]=='High' %}priority-high{% elif t[5]=='Medium' %}priority-medium{% else %}priority-low{% endif %}{% endif %}" data-status="{{ 'completed' if t[4]==1 else 'pending' }}">
+          <div>
+            <div class="font-semibold text-gray-800">{{ t[1] }}</div>
+            <div class="text-sm text-gray-600 mt-1">{{ t[2] }}</div>
+            <div class="text-xs text-gray-500 mt-1">Deadline: {{ t[3] or 'N/A' }}</div>
+          </div>
+          <div class="flex flex-col gap-2 ml-3">
+            {% if not t[4] %}<button onclick="completeTask({{ t[0] }})" class="text-green-600 hover:text-green-800">✔</button>{% endif %}
+            <button onclick="deleteTask({{ t[0] }})" class="text-red-600 hover:text-red-800">🗑</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="p-5 border-t">
+        <h3 class="font-semibold mb-2">Add New Task</h3>
+        <div class="space-y-2">
+          <input id="task-subject" class="w-full p-2.5 border rounded-lg" placeholder="Subject" />
+          <input id="task-desc" class="w-full p-2.5 border rounded-lg" placeholder="Description" />
+          <input id="task-deadline" type="date" class="w-full p-2.5 border rounded-lg" />
+          <select id="task-priority" class="w-full p-2.5 border rounded-lg">
+            <option value="Low">Low Priority</option>
+            <option value="Medium">Medium Priority</option>
+            <option value="High">High Priority</option>
+          </select>
+          <button onclick="addTask()" class="w-full bg-blue-600 text-white p-2.5 rounded-lg btn">+ Add Task</button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col bg-gray-50">
+      <section id="chat-history" class="flex-1 overflow-y-auto p-6 scrollbar space-y-4"></section>
+
+      <footer class="bg-gray-50 p-4 flex items-center gap-3 border-t border-gray-200">
+        <input id="user-input" class="flex-1 p-3 border border-gray-200 rounded-10" placeholder="Type a message..." />
+        <button id="send-btn" class="px-6 py-3 bg-blue-600 text-white rounded-10 btn">Send</button>
+      </footer>
+    </main>
+
+    <aside class="w-80 bg-white border-l border-gray-200 flex flex-col p-5 overflow-y-auto scrollbar">
+      <button onclick="generatePlan()" class="w-full bg-green-600 text-white p-3 rounded-lg mb-4 btn">Generate Study Plan</button>
+
+      <label class="text-sm text-gray-700">Pomodoro (min)</label>
+      <div class="flex items-center gap-3 mt-2">
+        <input id="pomodoro-time" type="number" min="1" value="25" class="w-20 p-2 border rounded-lg" />
+        <div class="text-sm text-gray-500">minutes</div>
+      </div>
+
+      <div class="flex flex-col items-center mt-4">
+        <canvas id="pomodoro-canvas" width="150" height="150" style="width:150px;height:150px"></canvas>
+        <div id="pomodoro-text" class="pomodoro-timer">25:00</div>
+      </div>
+
+      <div class="flex gap-2 mt-3">
+        <button id="pomodoro-toggle" class="flex-1 bg-purple-600 text-white p-2 rounded-lg btn">▶ Start</button>
+        <button id="pomodoro-reset" class="flex-1 bg-red-600 text-white p-2 rounded-lg btn">⏹ Reset</button>
+      </div>
+
+      <div class="mt-6">
+        <h3 class="font-semibold text-gray-800 mb-2">Today's Progress</h3>
+        <div class="relative w-full h-5 bg-gray-200 rounded-full overflow-hidden mb-1">
+          <div id="progress-bar" class="progress-bar-fill absolute left-0 top-0 h-full w-0 rounded-full"></div>
+          <span id="progress-label" class="absolute right-2 top-0 text-xs font-semibold text-white">0%</span>
+        </div>
+        <div id="progress-motivation" class="text-sm text-gray-700 italic">Let's get started!</div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const chatHistory = document.getElementById('chat-history');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+    const motivationalQuote = document.getElementById('motivational-quote');
+
+    const pomodoroCanvas = document.getElementById('pomodoro-canvas');
+    const pomodoroText = document.getElementById('pomodoro-text');
+    const pomodoroTimeInput = document.getElementById('pomodoro-time');
+    const toggleBtn = document.getElementById('pomodoro-toggle');
+    const resetBtn = document.getElementById('pomodoro-reset');
+
+    const progressBar = document.getElementById('progress-bar');
+    const progressLabel = document.getElementById('progress-label');
+    const progressMotivation = document.getElementById('progress-motivation');
+
+    const quotes = [
+      "“You can do it!”",
+      "“Focus on progress, not perfection.”",
+      "“Small steps every day lead to big results.”",
+      "“Stay consistent, stay motivated.”",
+      "“Believe in yourself!”",
+      "“Every day is a new opportunity.”",
+      "“Discipline is the bridge between goals and accomplishment.”",
+      "“Push yourself, because no one else is going to do it for you.”",
+      "“Your potential is endless.”",
+      "“Success is a series of small wins.”"
+    ];
+
+    function randomQuote() {
+      motivationalQuote.textContent = quotes[Math.floor(Math.random() * quotes.length)];
+    }
+
+    setInterval(randomQuote, 15000);
+
+    function addMessage(sender, text) {
+      const msg = document.createElement('div');
+      msg.className = 'message-bubble ' + (sender === 'user' ? 'user-message' : 'agent-message');
+      const now = new Date();
+      const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+      if (sender === 'agent') msg.innerHTML = marked.parse(text);
+      else msg.textContent = text;
+      const timestamp = document.createElement('span');
+      timestamp.className = 'timestamp';
+      timestamp.textContent = time;
+      msg.appendChild(timestamp);
+      chatHistory.appendChild(msg);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+      return msg;
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+
+    async function sendMessage() {
+      const message = userInput.value.trim();
+      if (!message) return;
+      addMessage('user', message);
+      userInput.value = '';
+      const placeholder = addMessage('agent', 'Generating...');
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+        const data = await res.json();
+        placeholder.innerHTML = marked.parse(data.response || data.error || 'Error');
+        const now = new Date();
+        const stamp = document.createElement('span');
+        stamp.className = 'timestamp';
+        stamp.textContent = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+        placeholder.appendChild(stamp);
+      } catch (err) {
+        placeholder.textContent = 'Error fetching response.';
+      }
+    }
+
+    async function addTask() {
+      const subject = document.getElementById('task-subject').value.trim();
+      const description = document.getElementById('task-desc').value.trim();
+      const deadline = document.getElementById('task-deadline').value;
+      const priority = document.getElementById('task-priority').value;
+      if (!subject) return alert('Please enter subject');
+      await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject, description, deadline, priority })
+      });
+      location.reload();
+    }
+
+    async function deleteTask(id) {
+      await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+      location.reload();
+    }
+
+    async function completeTask(id) {
+      await fetch(`/api/tasks/${id}/complete`, { method: 'POST' });
+      location.reload();
+    }
+
+    async function generatePlan() {
+      const res = await fetch('/api/generate-plan');
+      const data = await res.json();
+      addMessage('agent', data.plan || 'Plan generated.');
+      updateProgress();
+    }
+
+    function filterTasks(status) {
+      document.querySelectorAll('.task-card').forEach(card => {
+        card.style.display = (status === 'all' || card.dataset.status === status) ? 'flex' : 'none';
+      });
+    }
+
+    function updateProgress() {
+      const cards = document.querySelectorAll('.task-card');
+      const total = cards.length;
+      const completed = document.querySelectorAll('.task-card.completed').length;
+      const percent = total ? Math.round((completed / total) * 100) : 0;
+      progressBar.style.width = percent + '%';
+      progressLabel.textContent = percent + '%';
+      if (percent === 100) progressMotivation.textContent = '🎉 All done! Great job!';
+      else if (percent >= 75) progressMotivation.textContent = 'Almost there, keep going!';
+      else if (percent >= 50) progressMotivation.textContent = 'Halfway done, stay focused!';
+      else if (percent > 0) progressMotivation.textContent = 'Good start, keep it up!';
+      else progressMotivation.textContent = "Let's get started!";
+    }
+
+    updateProgress();
+
+    let pomodoroTotal = Math.max(1, parseInt(pomodoroTimeInput.value) || 25) * 60;
+    let pomodoroRemaining = pomodoroTotal;
+    let intervalId = null;
+    let isRunning = false;
+    let isPaused = false;
+    let canvasScaled = false;
+
+    function formatTime(sec) {
+      const m = Math.floor(sec / 60).toString().padStart(2, '0');
+      const s = Math.floor(sec % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function setupCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      const size = 150;
+      if (pomodoroCanvas.width !== size * dpr || pomodoroCanvas.height !== size * dpr) {
+        pomodoroCanvas.width = size * dpr;
+        pomodoroCanvas.height = size * dpr;
+        pomodoroCanvas.style.width = size + 'px';
+        pomodoroCanvas.style.height = size + 'px';
+        const ctx = pomodoroCanvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+    }
+
+    function drawCircle(percent) {
+      setupCanvas();
+      const ctx = pomodoroCanvas.getContext('2d');
+      const size = 150;
+      const cx = size / 2;
+      const cy = size / 2;
+      const r = 64;
+      ctx.clearRect(0, 0, size, size);
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.lineWidth = 10;
+      ctx.strokeStyle = '#e6eef7';
+      ctx.stroke();
+
+      const start = -Math.PI / 2;
+      const end = start + percent * Math.PI * 2;
+
+      ctx.beginPath();
+      ctx.lineWidth = 10;
+      ctx.lineCap = 'round';
+      const grad = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+      grad.addColorStop(0, '#3b82f6');
+      grad.addColorStop(0.6, '#8b5cf6');
+      grad.addColorStop(1, '#7c3aed');
+      ctx.strokeStyle = grad;
+      ctx.arc(cx, cy, r, start, end);
+      ctx.stroke();
+
+      const dotAngle = end;
+      const dotX = cx + Math.cos(dotAngle) * r;
+      const dotY = cy + Math.sin(dotAngle) * r;
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, 2, 0, Math.PI * 2);
+      ctx.fillStyle = '#3b82f6';
+      ctx.fill();
+    }
+
+    function updatePomodoroDisplay() {
+      pomodoroText.textContent = formatTime(pomodoroRemaining);
+      const percent = pomodoroTotal > 0 ? (1 - pomodoroRemaining / pomodoroTotal) : 0;
+      drawCircle(percent);
+    }
+
+    function startPomodoro() {
+      if (isRunning && !isPaused) return;
+      if (!isRunning) {
+        const inputMinutes = Math.max(1, parseInt(pomodoroTimeInput.value) || 25);
+        pomodoroTotal = inputMinutes * 60;
+        pomodoroRemaining = pomodoroTotal;
+      }
+      isRunning = true;
+      isPaused = false;
+      clearInterval(intervalId);
+      intervalId = setInterval(() => {
+        if (!isPaused) {
+          pomodoroRemaining = Math.max(0, pomodoroRemaining - 1);
+          updatePomodoroDisplay();
+          if (pomodoroRemaining <= 0) {
+            clearInterval(intervalId);
+            isRunning = false;
+            isPaused = false;
+            toggleBtn.textContent = '▶ Start';
+            setTimeout(() => alert('Session finished. Take a short break!'), 50);
+          }
+        }
+      }, 1000);
+      toggleBtn.textContent = '⏸ Pause';
+    }
+
+    toggleBtn.addEventListener('click', () => {
+      if (!isRunning) {
+        startPomodoro();
+      } else {
+        isPaused = !isPaused;
+        toggleBtn.textContent = isPaused ? '▶ Resume' : '⏸ Pause';
+      }
+    });
+
+    resetBtn.addEventListener('click', () => {
+      clearInterval(intervalId);
+      isRunning = false;
+      isPaused = false;
+      const inputMinutes = Math.max(1, parseInt(pomodoroTimeInput.value) || 25);
+      pomodoroTotal = inputMinutes * 60;
+      pomodoroRemaining = pomodoroTotal;
+      updatePomodoroDisplay();
+      toggleBtn.textContent = '▶ Start';
+    });
+
+    pomodoroTimeInput.addEventListener('change', () => {
+      if (!isRunning) {
+        const inputMinutes = Math.max(1, parseInt(pomodoroTimeInput.value) || 25);
+        pomodoroTotal = inputMinutes * 60;
+        pomodoroRemaining = pomodoroTotal;
+        updatePomodoroDisplay();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      setupCanvas();
+      updatePomodoroDisplay();
+    });
+
+    setupCanvas();
+    updatePomodoroDisplay();
+  </script>
+</body>
+</html>
