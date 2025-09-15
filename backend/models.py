@@ -9,8 +9,6 @@ def get_conn():
 def init_db():
     conn = get_conn()
     c = conn.cursor()
-
-    # Tasks table (added category, priority, created_at)
     c.execute('''CREATE TABLE IF NOT EXISTS tasks (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     subject TEXT NOT NULL,
@@ -21,8 +19,6 @@ def init_db():
                     priority TEXT DEFAULT 'Medium',
                     created_at TEXT
                 )''')
-
-    # Chat history table
     c.execute('''CREATE TABLE IF NOT EXISTS chat_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     sender TEXT NOT NULL,
@@ -119,7 +115,7 @@ def get_chat_history(limit=20):
     c.execute("SELECT sender, message FROM chat_history ORDER BY id DESC LIMIT ?", (limit,))
     rows = c.fetchall()
     conn.close()
-    return rows[::-1]  # chronological order
+    return rows[::-1] 
 
 def get_stats():
     conn = get_conn()
@@ -141,3 +137,4 @@ def get_stats():
 
     pct = int((completed / total) * 100) if total > 0 else 0
     return {"total": total, "completed": completed, "percent_complete": pct, "by_priority": by_priority, "by_category": by_category}
+
