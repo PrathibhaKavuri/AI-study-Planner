@@ -6,3 +6,5 @@ Designed to help students plan and manage their studies effectively.It combines 
 
 The frontend uses **HTML** along with **TailwindCSS** for styling and **JavaScript**.On the backend it runs on **Flask (Python)**. Data is stored in a **SQLite database** which is managed through `models.py`.For the AI features..the app integrates **Google’s Gemini API** via the `google-generativeai` library.It also makes use of **dotenv** to handle environment variables securely.. 
 
+![Preview](Preview.png)
+
